@@ -63,7 +63,10 @@ app.post("/messages", (req, res) => {
 })
 
 app.get("/messages", (req, res) => {
-    res.send(mensagens);
+    const {limit} = req.query;
+    //fazer o filtro para mostrar só as mensagens destinadas a todos ou ao usuário
+    
+    res.send(mensagens.slice(-limit));
 })
 
 
