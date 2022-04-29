@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import dayjs from 'dayjs'
+import dayjs from 'dayjs';
 
 const app = express(); // Cria um servidor
 app.use(express.json()); // Permite que o express entenda json
@@ -15,7 +15,8 @@ const participantes = [
 
 const mensagens =[
     {from: 'João', to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss')},
-    {from: 'João1', to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss')}
+    {from: 'João1', to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss')},
+    {from: 'João1', to: 'João', text: 'entra na sala...', type: 'private_message', time: dayjs().format('HH:mm:ss')}
 ]
 
 
@@ -37,7 +38,9 @@ app.post("/participants", (req, res) => {
     }
 
     participantes.push({name: req.body.name, lastStatus: Date.now()});
+    mensagens.push({from: name, to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss')});
     console.log(participantes);
+    console.log(mensagens)
     res.sendStatus(201);
 });
 
@@ -63,10 +66,39 @@ app.post("/messages", (req, res) => {
 })
 
 app.get("/messages", (req, res) => {
+    console.log("headers")
+    console.log (req.headers)
     const {limit} = req.query;
-    //fazer o filtro para mostrar só as mensagens destinadas a todos ou ao usuário
-    
-    res.send(mensagens.slice(-limit));
+    const Visivel = mensagens.filter(mensagem => {
+        return(mensagem.to === "Todos" || mensagem.to === req.headers.user || mensagem.from === req.headers.user)});
+    res.send(Visivel.slice(-limit));
+})
+
+app.post("/status", (req, res) => {
+    const {user} = req.headers;
+    let participante = participantes.find(participante => participante.name === user);
+
+    if (!participante) {
+        console.log("Participante não encontrado");
+        res.status(404).send("Participante não encontrado");
+        return
+    }
+
+    participantes.map((participante, index) => {
+        if (Date.now() - participante.lastStatus > 10000){
+            mensagens.push({from: participante.name, to: 'Todos', text: 'saiu da sala...', type: 'status', time: dayjs().format('HH:mm:ss')});
+            participantes.splice(index, 1);
+        };
+    });
+
+    participante.lastStatus = Date.now();
+    console.log("participante: " + participante.lastStatus);
+
+    // setInterval(() => {
+    //     const participantesAtivos = participantes.filter(participante => {
+    // })})
+
+    res.sendStatus(200);
 })
 
 
