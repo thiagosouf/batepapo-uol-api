@@ -3,7 +3,7 @@ import express, {json} from "express";
 import cors from "cors";
 import {MongoClient} from "mongodb";
 import dotenv from "dotenv";
-// import joi from "joi";
+import joi from "joi";
 import dayjs from "dayjs";
 
 const app = express();
@@ -11,6 +11,16 @@ app.use(cors());
 app.use(json());
 dotenv.config();
 
+const schemaParticipants = joi.object({
+    name: joi.string().min(1).required(),
+    lastStatus: joi.number()
+});
+
+const schemaMessages = joi.object({
+    to: joi.string().min(1).required(),
+    text: joi.string().min(1).required(),
+    type: joi.string().valid("message", "private_message").required()
+});
 
 let db = null;
 const mongoClient = new MongoClient(process.env.MONGO_URI);
@@ -22,21 +32,21 @@ app.post("/participants", async (req, res) => {
     console.log(req.body)
     console.log(dayjs().format('HH:mm:ss'));
 
-    if (name === "") {
+    const validacao = schemaParticipants.validate(name, {abortEarly: true});
+    if (validacao.error) {
         console.log("Nome não pode ser vazio");
-        res.status(422).send("Nome não informado");
-        return
+        return res.status(422).send("Nome não informado");
     }
 
     try{
         await mongoClient.connect();
         db = mongoClient.db('bpUol');
 
-        const nomeDuplicado = await db.collection("participants").findOne({name: name})
+        const nomeDuplicado = await db.collection("participants").find({...name}).toArray();
 
-        if (nomeDuplicado) {
-            console.log("Nome duplicado");
-            res.status(422).send("Nome duplicado");
+        if (nomeDuplicado.length>0) {
+            console.log("Nome duplicado2");
+            return res.status(409).send("Nome duplicado");
         }
 
         await db.collection("participants").insertOne({...name, lastStatus: Date.now()});
@@ -45,7 +55,7 @@ app.post("/participants", async (req, res) => {
     }
     catch(err){
         console.log(err);
-        res.status(500).send("Erro ao cadastrar participante");
+        res.status(422).send("Erro ao cadastrar participante");
     }
 })
 
@@ -66,10 +76,12 @@ app.post("/messages", async (req, res) => {
     const {to, text, type} = req.body;
     const from = req.headers.user;
     const destinatario = await db.collection("participants").findOne({name: from});
-    if ((to === "") || (text === "") || (type !== "message" && type !== "private_message") || (!destinatario)) {
+
+
+    const validacao = schemaMessages.validate(req.body, {abortEarly: true});
+    if (validacao.error || destinatario === null) {
         console.log("Dados incompletos");
-        res.status(422).send("Dados incompletos");
-        return
+        return res.status(422).send("Dados incompletos");
     }
     
     try{
@@ -81,22 +93,19 @@ app.post("/messages", async (req, res) => {
     }
     catch(err){
         console.log(err);
-        res.status(500).send("Erro ao enviar mensagem");
+        res.status(422).send("Erro ao enviar mensagem");
     }   
 
 });
     
 app.get("/messages", async (req, res) => {
-    console.log("headers")
-    console.log (req.headers)
-    // const limit = req.query.limit;
-    const limit = 200;
-    // const visivel = 
+    const limit = req.query.limit;
+    
     try{
         await mongoClient.connect();
         db = mongoClient.db("bpUol");
-        const visivel =  await db.collection("messages").find({$or: [{to: "Todos"}, {to: req.headers.user}, {from: req.headers.user}, ]}).limit(parseInt(limit)).toArray();
-        res.status(200).send(visivel);
+        const visivel =  await db.collection("messages").find({$or: [{to: "Todos"}, {to: req.headers.user}, {from: req.headers.user}, ]}).sort({time: 1}).toArray();
+        res.status(200).send(visivel.slice(-limit));
     }
     catch(err){
         console.log(err);
@@ -116,11 +125,11 @@ app.post("/status", async (req, res) => {
         }
         
         const participantes = await db.collection("participants").updateOne({name: user}, {$set: {lastStatus: Date.now()}});
-        let expulso = await db.collection("participants").findOne({lastStatus: {$lt: Date.now() - 1000}});
+        let expulso = await db.collection("participants").findOne({lastStatus: {$lt: Date.now() - 15000}});
         let nome = expulso.name;
         await db.collection("messages").insertOne({from: nome, to: "Todos", text: `saiu da sala...`, type: "status", time: dayjs().format('HH:mm:ss')});
         await db.collection("participants").deleteOne({name: nome});
-        res.status(201).send("Status atualizado com sucesso");
+        res.status(200).send("Status atualizado com sucesso");
 
     }
     catch(err){
@@ -133,4 +142,4 @@ app.post("/status", async (req, res) => {
 
 
 // Configura o servidor para rodar na porta 5000
-app.listen(5001, console.log("Server ligado na porta 5000"));
+app.listen(5000, console.log("Server ligado na porta 5000"));

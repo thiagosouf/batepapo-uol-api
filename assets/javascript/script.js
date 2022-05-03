@@ -14,7 +14,7 @@ function perguntarNome() {
 
 function registrarParticipante() {
   const dados = { name: nome };
-  const requisicao = axios.post("http://localhost:5001/participants", dados);
+  const requisicao = axios.post("http://localhost:5000/participants", dados);
   requisicao.then(entrarNaSala).catch(perguntarNome);
 }
 
@@ -30,7 +30,7 @@ function entrarNaSala() {
 function carregarMensagens() {
   if (!buscarMensagens) return;
 
-  const requisicao = axios.get("http://localhost:5001/messages?limit=50", {
+  const requisicao = axios.get("http://localhost:5000/messages?limit=50", {
     headers: {
       User: nome
     }
@@ -39,7 +39,7 @@ function carregarMensagens() {
 }
 
 function carregarParticipantes() {
-  const requisicao = axios.get("http://localhost:5001/participants", {
+  const requisicao = axios.get("http://localhost:5000/participants", {
     headers: {
       User: nome
     }
@@ -56,11 +56,11 @@ function agendarAtualizacaoDeParticipantes() {
 }
 
 function agendarAtualizacaoDeStatus() {
-  setInterval(atualizarStatus, 5001);
+  setInterval(atualizarStatus, 5000);
 }
 
 function atualizarStatus() {
-  axios.post("http://localhost:5001/status", {}, {
+  axios.post("http://localhost:5000/status", {}, {
     headers: {
       User: nome
     }
@@ -106,7 +106,7 @@ function enviarMensagem() {
   });
   renderizarMensagens();
 
-  const requisicao = axios.post("http://localhost:5001/messages", dados, {
+  const requisicao = axios.post("http://localhost:5000/messages", dados, {
     headers: {
       User: nome
     }
@@ -278,7 +278,7 @@ function enviarMensagemEditada(event, id) {
     conteudoMensagem.innerHTML = oldHtml;
     conteudoMensagem.querySelector(".text").innerHTML = newMessage;
 
-    axios.put(`http://localhost:5001/messages/${id}`, {
+    axios.put(`http://localhost:5000/messages/${id}`, {
       to: mensagem.to,
       text: newMessage,
       type: mensagem.type
@@ -299,7 +299,7 @@ function excluirMensagem(id) {
   const confirmacao = confirm("Deseja realmente excluir esta mensagem?");
 
   if (confirmacao) {
-    axios.delete(`http://localhost:5001/messages/${id}`, {
+    axios.delete(`http://localhost:5000/messages/${id}`, {
       headers: {
         User: nome
       }
