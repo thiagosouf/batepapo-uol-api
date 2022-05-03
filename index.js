@@ -1,73 +1,136 @@
-import express from 'express';
-import cors from 'cors';
-import dayjs from 'dayjs';
-import { MongoClient } from 'mongodb';
-import dotenv from 'dotenv';
+import express, {json} from "express";
+// import chalk from "chalk";
+import cors from "cors";
+import {MongoClient} from "mongodb";
+import dotenv from "dotenv";
+// import joi from "joi";
+import dayjs from "dayjs";
+
+const app = express();
+app.use(cors());
+app.use(json());
 dotenv.config();
 
-const app = express(); // Cria um servidor
-app.use(express.json()); // Permite que o express entenda json
-app.use(cors()); // Permite acesso de qualquer lugar
 
 let db = null;
 const mongoClient = new MongoClient(process.env.MONGO_URI);
-const promise = mongoClient.connect();
-promise.then(() => db = mongoClient.db("participants"));
-
-// const participantes = [
-//     {name: 'João', lastStatus: 12313120}, 
-//     {name: 'João1', lastStatus: 12313121},
-//     {name: 'João2', lastStatus: 12313122},
-//     {name: 'João3', lastStatus: 12313123},
-// ]
-
-// const mensagens =[
-//     {from: 'João', to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss')},
-//     {from: 'João1', to: 'Todos', text: 'entra na sala...', type: 'status', time: dayjs().format('HH:mm:ss')},
-//     {from: 'João1', to: 'João', text: 'entra na sala...', type: 'private_message', time: dayjs().format('HH:mm:ss')}
-// ]
 
 
 // Configura uma função pra ser executada quando bater um GET na rota "/"
-app.post("/participants", (req, res) => {
-    if (req.body.name === "") {
+app.post("/participants", async (req, res) => {
+    const name = req.body;
+    console.log(req.body)
+    console.log(dayjs().format('HH:mm:ss'));
+
+    if (name === "") {
         console.log("Nome não pode ser vazio");
         res.status(422).send("Nome não informado");
-        return}
-    const promise = db.collection('participants').insertOne({name: req.body.name, lastStatus: Date.now()});
-    promise.then(() => {
-        console.log("Participante inserido com sucesso");
-        res.sendStatus(201);
-    })
-    promise.catch(() => {
-        console.log("Erro ao inserir participante");
-        res.sendStatus(500);
-    })
+        return
+    }
+
+    try{
+        await mongoClient.connect();
+        db = mongoClient.db('bpUol');
+
+        const nomeDuplicado = await db.collection("participants").findOne({name: name})
+
+        if (nomeDuplicado) {
+            console.log("Nome duplicado");
+            res.status(422).send("Nome duplicado");
+        }
+
+        await db.collection("participants").insertOne({...name, lastStatus: Date.now()});
+        await db.collection("messages").insertOne({from: req.body.name, to: "Todos", text: "entra na sala...", type: "status", time: dayjs().format('HH:mm:ss')});
+        res.status(201).send("Participante cadastrado com sucesso");
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).send("Erro ao cadastrar participante");
+    }
 })
 
-
-app.get("/participants", (req, res) => {
-    const promise = db.collection('participants').find().toArray();
-    promise.then(participantes => {
-        res.send(participantes);})
-    promise.catch(() => {
-        console.log("Erro ao buscar participantes");
-        res.sendStatus(500);})
+app.get("/participants", async (req, res) => {
+    try{
+        await mongoClient.connect();
+        db = mongoClient.db("bpUol");
+        const participantes = await db.collection("participants").find().toArray();
+        res.status(200).send(participantes);
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).send("Erro ao buscar participantes");
+    }
     });
 
-app.post("/messages", (req, res) => {
+app.post("/messages", async (req, res) => {
+    const {to, text, type} = req.body;
+    const from = req.headers.user;
+    const destinatario = await db.collection("participants").findOne({name: from});
+    if ((to === "") || (text === "") || (type !== "message" && type !== "private_message") || (!destinatario)) {
+        console.log("Dados incompletos");
+        res.status(422).send("Dados incompletos");
+        return
+    }
+    
+    try{
+        await mongoClient.connect();
+        db = mongoClient.db('bpUol')
 
-})
+        db.collection("messages").insertOne({from, to, text, type, time: dayjs().format('HH:mm:ss')})
+        res.status(201).send("Mensagem enviada com sucesso");
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).send("Erro ao enviar mensagem");
+    }   
 
-app.get("/messages", (req, res) => {
+});
+    
+app.get("/messages", async (req, res) => {
+    console.log("headers")
+    console.log (req.headers)
+    // const limit = req.query.limit;
+    const limit = 200;
+    // const visivel = 
+    try{
+        await mongoClient.connect();
+        db = mongoClient.db("bpUol");
+        const visivel =  await db.collection("messages").find({$or: [{to: "Todos"}, {to: req.headers.user}, {from: req.headers.user}, ]}).limit(parseInt(limit)).toArray();
+        res.status(200).send(visivel);
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).send("Erro ao buscar mensagens");
+    }
     
 })
 
-app.post("/status", (req, res) => {
-    
+app.post("/status", async (req, res) => {
+    const {user} = req.headers;
+    try{
+        let participante = await db.collection("participants").findOne({name: user});
+        if (!participante) {
+            console.log("Participante não encontrado");
+            res.status(404).send("Participante não encontrado");
+            return
+        }
+        
+        const participantes = await db.collection("participants").updateOne({name: user}, {$set: {lastStatus: Date.now()}});
+        let expulso = await db.collection("participants").findOne({lastStatus: {$lt: Date.now() - 1000}});
+        let nome = expulso.name;
+        await db.collection("messages").insertOne({from: nome, to: "Todos", text: `saiu da sala...`, type: "status", time: dayjs().format('HH:mm:ss')});
+        await db.collection("participants").deleteOne({name: nome});
+        res.status(201).send("Status atualizado com sucesso");
+
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).send("Erro ao atualizar status");
+    }
+
 })
 
 
 
 // Configura o servidor para rodar na porta 5000
-app.listen(5000, console.log("Server ligado na porta 5000"));
+app.listen(5001, console.log("Server ligado na porta 5000"));
